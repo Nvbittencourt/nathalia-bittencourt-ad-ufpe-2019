@@ -1,0 +1,306 @@
+---
+title: "Título"
+author: "Autor"
+date: "7 de agosto de 2019"
+output: pdf_document
+mainfont: Times New Roman      # fonte Times New Roman
+fontfamily: mathpazo                 # letra serifada
+fontsize: 12 pt                           # tamanho da fonte
+spacing: double                         # espaçamento entre linhas; double ou single
+indent: true                               # indentação nos parágrafos
+---
+
+########################## UFPE - MESTRADO - PPGCP #####################################
+##################### TRABALHO FINAL - ANLISE DE DADOS #################################
+####################### PROFESSOR: DAVI MOREIRA ########################################
+#################### ALUNA: NATHALIA VIVIANI BITTENCOURT ###############################
+########################### TRATAMENTO DOS DADOS #######################################
+
+# carregar pacotes
+
+```{r}
+if(require(stargazer) == F) install.packages('stargazer'); require(stargazer) 
+library(stringi); library(stringr); 
+library(dplyr); library(readxl)
+```
+
+# carregar dados
+
+```{r}
+face <- read_excel("dados/facebook_2019.xlsx")
+face2 <- read_excel("dados/world_leaders_followers_atualizado.xlsx")
+pop_speech <- read.csv("dados/pop_speech_clean.csv")
+```
+
+#===================================#
+# tratamento de dados
+#==================================#
+
+#### facebook 2019
+
+# filtrar selecionar na base do facebook
+```{r}
+face = face[face$`Personal Profile` == 1,]
+```
+
+
+# tirar nomes 'president' e 'prime minister'
+```{r}
+face$leader = str_replace(face$`Page Section`, 'President ', '')
+face$leader = str_replace(face$leader, 'Prime Minister ', '')
+```
+
+
+# remover caracteres para padronizacao e combinacao
+```{r}
+face$leader = stri_trans_general(face$leader, "latin-ascii")
+face$leader = tolower(face$leader)
+face$leader = str_replace(face$leader, '-', ' ')
+```
+
+#### world leaders followers atualizado
+
+# renomear colunas a partir da linha 2 e remover linha 1
+```{r}
+colnames(face2) = face2[2,]
+face2 = face2[-c(1:2),]
+```
+
+# transformar likes em numerico
+
+```{r}
+face2$Likes = as.numeric(face2$Likes)
+```
+
+# remover caracteres para padronizacao e combinacao
+```{r}
+face2$leader = stri_trans_general(face2$`World Leader`, "latin-ascii")
+face2$leader = tolower(face2$leader)
+face2$leader = str_replace(face2$leader, '-', ' ')
+```
+
+#=====================#
+# combinar dados
+#====================#
+
+# selecionar variaveis de interesse
+```{r}
+face = face[,c('leader','Likes')]
+face2 = face2[,c('leader','Likes')]
+```
+
+# concatenar com a base facebook19
+```{r}
+dataface = rbind(face, face2)
+```
+
+# remover casos dusplicados e casos faltantes 
+```{r}
+dataface = dataface[!duplicated(dataface$leader),]
+dataface = dataface[complete.cases(dataface$Likes),]
+```
+
+# combinar dados
+```{r}
+dataset = merge(pop_speech, dataface, by='leader')
+```
+
+# selecionar variaveis e renomear
+```{r}
+dataset = dataset[,c('leader', 'Likes','average.score', 'speech.category', 'region')]
+colnames(dataset) = c('leader', 'face_likes','average_score' ,'speech', 'region')
+```
+
+#Salvando a nova base em formato csv e xlsx
+```{r}
+write.csv(dataset, 'dataset_cru.csv', row.names = F)
+```
+
+
+########################## UFPE - MESTRADO - PPGCP #####################################
+##################### TRABALHO FINAL - ANLISE DE DADOS #################################
+####################### PROFESSOR: DAVI MOREIRA ########################################
+#################### ALUNA: NATHALIA VIVIANI BITTENCOURT ###############################
+#################################### MODELS ############################################
+
+#Downloading Packages
+```{r}
+getwd()
+library(readxl); library(stringi); library(stringr); 
+library(tidyverse); library(stargazer)
+library(readxl)
+```
+
+
+
+# Downloading final treated data - check tratamento.R  
+```{r}
+data <- read_excel("dataset.xlsx")
+```
+
+# Two Plots to understand the data:
+```{r}
+library(ggplot2)
+ggplot(data = data, aes(x=leader, y=average_score)) +
+  geom_col(fill = "#329999") +
+  labs(title = "Pop_Speech_Dataset", x='leader', y= 'populism score') +
+  theme_minimal() +
+  coord_flip()
+
+ggplot(data = data, aes(x=leader, y=face_likes)) +
+  geom_col(fill = "#68132e") +
+  geom_label(aes(label=face_likesc)) +
+  labs(title = "Dataset_Face_Likes", x='leader', y= 'Likes') +
+  theme_minimal() +
+  coord_flip()
+```
+
+#Now, we execute the function mutate in order to creat the variables to our models:
+
+# Variable Pop_VeryPop that creates a new column to separate populists and very populists from the other leaders
+```{r}
+data <- mutate(data, Pop_VeryPop = ifelse(speech == "Populist" | speech == "Very Populist", 1, 0))
+```
+
+#Variable Pop_VeryPop_SomewPop that creates a new column to separate all kinds of populists from no populists at all
+```{r}
+data <- mutate(data, Pop_VeryPop_SomewPop = ifelse(speech == "Populist" | 
+                                            speech == "Very Populist" |
+                                            speech == "Somewhat populist", 1, 0))
+```
+
+
+#Variable Not_populist that creates a new column to separate not populist leaders
+```{r}
+data <- mutate(data, Not_populist = ifelse(speech == 'Not populist', 1, 0)) 
+```
+
+#Variable America that creates a new column to separate the two regions in analysis
+```{r}
+data <- mutate(data, America = ifelse(region == "Latin America & Caribbean" |
+                                        region == "North America", 1, 0))
+```
+
+#Variable Europe_CentralAsia that creates a new column to separate the two regions in analysis
+```{r}
+data <- mutate(data, Europe_CentralAsia = ifelse(region == "Europe & Central Asia", 1, 0))
+```
+
+
+###### At last, the Models ########
+
+# First Linear model: vd: face_likes; vi: Pop_VeryPop
+
+```{r}
+Reg1_Pop_VeryPop = glm(face_likes ~ Pop_VeryPop, data = data)
+summary(Reg1_Pop_VeryPop)
+layout(matrix(c(1,2,3,4),2,2))
+plot(Reg1_Pop_VeryPop)
+
+#Interactive Regression plot:
+install.packages('ggiraphExtra') 
+require(ggiraph)
+require(ggiraphExtra)
+require(plyr)
+ggPredict(Reg1_Pop_VeryPop,se=TRUE,interactive=TRUE)
+```
+
+
+
+# Second Linear model: vd: face_likes; vi: Pop_VeryPop_SomewPop
+```{r}
+Reg2_Pop_VeryPop_SomewPop = glm(face_likes ~ Pop_VeryPop_SomewPop, data = data)
+summary(Reg2_Pop_VeryPop_SomewPop)
+layout(matrix(c(1,2,3,4),2,2))
+plot(Reg2_Pop_VeryPop_SomewPop)
+
+#Interactive Regression plot:
+require(ggiraph)
+require(ggiraphExtra)
+require(plyr)
+ggPredict(Reg2_Pop_VeryPop_SomewPop,se=TRUE,interactive=TRUE)
+```
+
+
+
+# Third Linear model: vd: face_likes; vi: Not_populist
+```{r}
+Reg3_Not_populist = glm(face_likes ~ Not_populist, data = data)
+summary(Reg3_Not_populist)
+layout(matrix(c(1,2,3,4),2,2))
+plot(Reg3_Not_populist)
+
+#Interactive Regression plot:
+require(ggiraph)
+require(ggiraphExtra)
+require(plyr)
+ggPredict(Reg3_Not_populist,se=TRUE,interactive=TRUE)
+```
+
+
+# Multiple Linear Regression
+
+## First Model: vd: face_likes; vi: Pop_VeryPop_SomewPop, vii: America
+```{r}
+RegM1_America <- lm(face_likes ~ America + Pop_VeryPop_SomewPop, data = data)
+summary(RegM1_America)
+layout(matrix(c(1,2,3,4),2,2))
+plot(RegM1_America)
+
+#Interactive plot 1:
+ggPredict(RegM1_America,colorAsFactor = TRUE,interactive=TRUE)
+```
+
+
+
+##Second Model: vd: face_likes; vi: Pop_VeryPop_SomewPop, vii: Europe_CentralAsia
+
+```{r}
+RegM2_Europe_CentralAsia <- lm(face_likes ~ Europe_CentralAsia + Pop_VeryPop_SomewPop, data = data)
+summary(RegM2_Europe_CentralAsia)
+layout(matrix(c(1,2,3,4),2,2))
+plot(RegM2_Europe_CentralAsia)
+
+#Interactive plot 2:
+ggPredict(RegM2_Europe_CentralAsia,colorAsFactor = TRUE,interactive=TRUE)
+```
+
+
+# Comparative analysis between the two models:
+```{r}
+anova(RegM1_America, RegM2_Europe_CentralAsia)
+```
+
+# Stargazer tables in order to best interpret the results:
+
+#Linear Regression - comparative summary
+
+```{r}
+library(stargazer)
+stargazer(Reg1_Pop_VeryPop, Reg2_Pop_VeryPop_SomewPop, Reg3_Not_populist,
+          type = "html", title = "Results", style = "ajps", p.auto=FALSE,  out="linearmodels.htm",
+          covariate.labels = c("|Populist + Very Pop.|", "|Populist + Very Pop. + Somew. Pop.|", "|Not Populist"))
+```
+
+
+#Multiple Linear Regressions - comparative summary and graphs
+
+```{r}
+stargazer(RegM1_America, RegM2_Europe_CentralAsia,
+          type = "html", title = "Results 2", style = "ajps", p.auto=FALSE, out="multiplemodels.htm",
+          covariate.labels = c("|America|", "|Europe and Central Asia|")) 
+```
+
+```{r}
+install.packages('ggiraphExtra') 
+require(ggiraph)
+require(ggiraphExtra)
+require(plyr)
+ggPredict(Reg1_Pop_VeryPop,se=TRUE,interactive=TRUE)
+```
+
+
+
+
+
+
